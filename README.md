@@ -84,3 +84,125 @@ Transferido663 B (tamaño 284 B)
 Política de referenciastrict-origin-when-cross-origin
 Prioridad de la solicitudHighest
 Resolución DNSSistema
+
+# Bloque 09
+
+## Comparación de entornos
+
+- URL local de 07: `http://localhost:3000/dev`
+- Base cloud real de este bloque: `https://a0355vlih9.execute-api.us-east-1.amazonaws.com/dev`
+- Configuración final: [mobile/src/api.ts](mobile/src/api.ts) apunta a la base cloud y conserva la interfaz existente.
+
+## Evidencias cloud
+
+En Network se conservaron las peticiones realizadas contra la base cloud:
+
+- `GET https://a0355vlih9.execute-api.us-east-1.amazonaws.com/dev/events`
+- `PATCH https://a0355vlih9.execute-api.us-east-1.amazonaws.com/dev/events/EVT-104`
+  con el cuerpo `{"status":"CANCELLED"}`.
+
+La traza esperada del backend para esas operaciones es:
+
+- `LIST eventos: GET`
+- `PATCH evento: EVT-104`
+
+La respuesta del PATCH es `200` con `{"id":"EVT-104","changes":{"status":"CANCELLED"},"operation":"UPDATED"}`.
+
+## Volver temporalmente a local
+
+Sólo cambiaría la línea `API_URL` de [mobile/src/api.ts](mobile/src/api.ts):
+
+```ts
+export const API_URL = "http://localhost:3000/dev";
+```
+
+Después arrancaría Serverless Offline desde `backend`:
+
+```bash
+npm run build
+npx serverless offline
+```
+
+Al terminar la comprobación local, restauraría la URL cloud anterior. La configuración que queda en el repositorio sigue apuntando a cloud.
+
+# Entrenamiento evaluable · Venue Control
+
+## Qué se ha construido
+
+La aplicación cambia el dominio de actuaciones a zonas operativas del recinto. Una zona
+tiene `id`, `name`, `capacity` y `status` (`OPEN` o `CLOSED`). El backend está separado
+en handlers TypeScript dentro de `backend/src/zones` y el cliente mantiene la capa HTTP
+en `mobile/src/api.ts`, sin mezclar `fetch` con la interfaz.
+
+El contrato implementado es:
+
+```text
+GET     /zones
+GET     /zones/{id}
+POST    /zones
+PUT     /zones/{id}
+PATCH   /zones/{id}
+DELETE  /zones/{id}
+```
+
+`GET` devuelve el catálogo fijo, y las escrituras devuelven respuestas simuladas para
+poder demostrar el contrato sin persistencia. El límite está declarado: al reiniciar
+Lambda o Serverless Offline no se conserva una escritura.
+
+## Ejecución local
+
+En una terminal:
+
+```bash
+cd backend
+npm run build
+npx serverless offline
+```
+
+La app móvil está configurada actualmente para `http://localhost:3000/dev` en
+[mobile/src/api.ts](mobile/src/api.ts). En otra terminal:
+
+```bash
+cd mobile
+npm run web
+```
+
+## Pruebas reproducibles
+
+Con Serverless Offline activo:
+
+```bash
+curl http://localhost:3000/dev/zones
+curl http://localhost:3000/dev/zones/ZONE-07
+curl -X POST http://localhost:3000/dev/zones \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Riverside Entrance","capacity":1200,"status":"OPEN"}'
+curl -X PUT http://localhost:3000/dev/zones/ZONE-07 \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Garden Stage Plus","capacity":3000,"status":"OPEN"}'
+curl -X PATCH http://localhost:3000/dev/zones/ZONE-07 \
+  -H "Content-Type: application/json" \
+  -d '{"status":"CLOSED"}'
+curl -X DELETE http://localhost:3000/dev/zones/ZONE-12
+```
+
+También se deben conservar en Thunder Client las respuestas de GET, POST, PUT, PATCH
+y DELETE. Un `id` de ruta llega al handler mediante `event.pathParameters.id`; el JSON
+del cuerpo llega como texto en `event.body` y se transforma con `JSON.parse`. `PUT`
+valida la representación completa de la zona, mientras que `PATCH` acepta únicamente
+el cambio parcial de `status`.
+
+## Local y cloud
+
+Para cambiar de entorno se modifica únicamente `API_URL` en
+[mobile/src/api.ts](mobile/src/api.ts). La URL cloud anterior del proyecto era:
+
+```text
+https://a0355vlih9.execute-api.us-east-1.amazonaws.com/dev
+```
+
+El despliegue de las nuevas rutas requiere volver a ejecutar `serverless deploy`.
+En este laboratorio quedó bloqueado por el `explicit deny` de `iam:PassRole` de la
+política `Pvoclabs1`; por eso las pruebas de esta implementación deben realizarse
+localmente hasta que el profesor proporcione un rol permitido. No se han añadido
+credenciales AWS al repositorio.
